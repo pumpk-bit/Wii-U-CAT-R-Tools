@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- One file: the window, the command line (CatR-Tools ARGS) and, embedded, catr itself. -->
+    <AssemblyName>CatR-Tools</AssemblyName>
+    <RootNamespace>CatRTools</RootNamespace>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Keeps the build PC's folders out of the exe. -->
+    <PathMap>$(MSBuildProjectDirectory)=CatR-Tools</PathMap>
+    <!-- Built by build.ps1 (Bundle\make_bundle.py): Python runtime + catr + pcfsserver.exe. -->
+    <CatrBundle>$(MSBuildThisFileDirectory)obj\bundle\catr-bundle.zip</CatrBundle>
+    <!-- Help > Documentation: the merged README build.ps1 writes (Bundle\make_readme.py). -->
+    <HelpDoc>$(MSBuildThisFileDirectory)obj\bundle\help.md</HelpDoc>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Remove="Bundle\**" />
+    <EmbeddedResource Include="$(CatrBundle)" LogicalName="catr-bundle.zip" Condition="Exists('$(CatrBundle)')" />
+    <EmbeddedResource Include="$(HelpDoc)" LogicalName="help.md" Condition="Exists('$(HelpDoc)')" />
+    <EmbeddedResource Include="README.md" LogicalName="help.md" Condition="!Exists('$(HelpDoc)')" />
+  </ItemGroup>
+</Project>

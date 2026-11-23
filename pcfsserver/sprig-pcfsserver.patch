@@ -1,0 +1,322 @@
+diff --git a/cmd/pcfsserver/src/main.rs b/cmd/pcfsserver/src/main.rs
+index e2860b0..e680f8a 100644
+--- a/cmd/pcfsserver/src/main.rs
++++ b/cmd/pcfsserver/src/main.rs
+@@ -2,9 +2,11 @@ use cat_dev::{
+ 	fsemul::pcfs::sata::server::PcfsSataServerBuilder,
+ 	host_fs::{HostFilesystem, cafe::make_ready_for_cafe},
+ };
+-use std::{net::Ipv4Addr, str::FromStr};
++use std::{net::Ipv4Addr, path::PathBuf, str::FromStr};
+ use tokio::runtime::Runtime;
+ 
++const DEFAULT_PCFS_TCP_PORT: u16 = 7500;
++
+ fn main() {
+ 	let Ok(runtime) = Runtime::new() else {
+ 		println!("TODO(mythra): thread pool spin up failure");
+@@ -14,15 +16,32 @@ fn main() {
+ }
+ 
+ async fn serve() {
+-	let fs = HostFilesystem::new(None, None).expect("TODO HOSTFS FAILURE");
++	let mut args = std::env::args().skip(1);
++	let Some(ip_text) = args.next() else {
++		eprintln!("usage: pcfsserver <console-ip> [port] [cafe-sdk-root]");
++		std::process::exit(2);
++	};
++	let console_ip = Ipv4Addr::from_str(&ip_text).unwrap_or_else(|_| {
++		eprintln!("invalid console IPv4 address: {ip_text}");
++		std::process::exit(2);
++	});
++	let port = args
++		.next()
++		.map(|text| {
++			text.parse::<u16>().unwrap_or_else(|_| {
++				eprintln!("invalid TCP port: {text}");
++				std::process::exit(2);
++			})
++		})
++		.unwrap_or(DEFAULT_PCFS_TCP_PORT);
++	let cafe_root = args.next().map(PathBuf::from);
++
++	let fs = HostFilesystem::new(cafe_root, None).expect("failed to open the Cafe SDK root");
+ 	make_ready_for_cafe(&fs).expect("Failed to ensure HostFS is ready for Cafe!");
+ 
+ 	let server = PcfsSataServerBuilder::new(fs, |ip| format!("{ip}"))
+-		.set_address(
+-			std::env::args()
+-				.next()
+-				.and_then(|ipstr| Ipv4Addr::from_str(&ipstr).ok()),
+-		)
++		.set_address(Some(console_ip))
++		.set_port(Some(port))
+ 		.set_fully_disable_cat_dev_sleep(true)
+ 		.set_fully_disable_chunk_override(true)
+ 		.set_trace_during_debug(true)
+@@ -31,9 +50,12 @@ async fn serve() {
+ 		.expect("TODO failed to spin up server");
+ 
+ 	println!(
+-		"TODO mythra debug: server on: {}:{}",
++		"Connecting PCFS host to console at {}:{}",
+ 		server.ip(),
+ 		server.port()
+ 	);
+-	server.bind().await.expect("TODO Failed to serve server");
++	if let Err(cause) = server.connect().await {
++		eprintln!("PCFS connection failed: {cause}");
++		std::process::exit(1);
++	}
+ }
+diff --git a/pkg/cat-dev/src/fsemul/pcfs/sata/server/write_file.rs b/pkg/cat-dev/src/fsemul/pcfs/sata/server/write_file.rs
+index 8a8871d..0f67cb3 100644
+--- a/pkg/cat-dev/src/fsemul/pcfs/sata/server/write_file.rs
++++ b/pkg/cat-dev/src/fsemul/pcfs/sata/server/write_file.rs
+@@ -10,14 +10,23 @@ use crate::{
+ 		},
+ 	},
+ 	host_fs::utilities::wrap_host_filesystem_operation,
+-	net::models::Request,
++	net::{
++		models::Request,
++		private::{stderr_trace, stderr_trace_enabled},
++	},
+ };
+ use bytes::Bytes;
++use std::time::Duration;
++use tokio::time::timeout;
+ use tracing::error;
+ 
+ /// A filesystem error occured.
+ const FS_ERROR: u32 = 0xFFF0_FFE0;
+ 
++/// How long to wait for a write's data. Generous: a SPARK capture sends
++/// 4 MiB blocks over Wi-Fi.
++const WRITE_DATA_TIMEOUT: Duration = Duration::from_secs(120);
++
+ /// Handle writing to a file that is already open.
+ ///
+ /// ## Errors
+@@ -47,22 +56,65 @@ pub async fn handle_write_file(
+ 	let data_to_write: Bytes;
+ 
+ 	if flags.ffio_enabled() {
+-		let Ok(len_needed) = usize::try_from(packet.block_count() * packet.block_size()) else {
+-			return Ok(SataResponse::new(
++		let fs_error = || {
++			Ok(SataResponse::new(
+ 				pid,
+-				request_header,
++				request_header.clone(),
+ 				SataResultCode::error(FS_ERROR),
+-			));
++			))
+ 		};
+-		// Bypass header and such checks...
+-		let Ok(bytes) = req.unsafe_read_more_bytes_from_stream(len_needed).await else {
+-			return Ok(SataResponse::new(
+-				pid,
+-				request_header,
+-				SataResultCode::error(FS_ERROR),
+-			));
++		let Ok(len_needed) = usize::try_from(packet.block_count() * packet.block_size()) else {
++			return fs_error();
+ 		};
+-		data_to_write = bytes;
++		if stderr_trace_enabled() {
++			eprintln!(
++				"write-file fd={handle} blocks={}x{} total={len_needed} move={should_move}",
++				packet.block_count(),
++				packet.block_size(),
++			);
++		}
++
++		// Matches Nintendo's PCFSServer: data for a write of up to the console's
++		// "first write size" follows the request straight away. For a larger
++		// write the console waits until the server sends a "first response"
++		// (0x20 header + big-endian total length), then streams the data. The
++		// normal result response follows once it is all written.
++		let first_write = usize::try_from(flags.first_write_size()).unwrap_or(usize::MAX);
++		if len_needed > first_write {
++			let first_response = Bytes::try_from(SataResponse::new_force_zero_version(
++				pid,
++				request_header.clone(),
++				SataResultCode::error(u32::try_from(len_needed).unwrap_or(u32::MAX)),
++			))?;
++			stderr_trace("write-first-response", &first_response);
++			if let Err(cause) = req.unsafe_write_bytes_to_stream(&first_response).await {
++				error!(?cause, packet.fd = handle, "Failed to send WriteFile first response!");
++				return fs_error();
++			}
++		}
++
++		// Not part of the protocol: without it a console that never sends the
++		// data would hang this connection (and the title) for good.
++		match timeout(
++			WRITE_DATA_TIMEOUT,
++			req.unsafe_read_more_bytes_from_stream(len_needed),
++		)
++		.await
++		{
++			Ok(Ok(bytes)) => data_to_write = bytes,
++			Ok(Err(cause)) => {
++				error!(?cause, packet.fd = handle, "Failed to read WriteFile data!");
++				return fs_error();
++			}
++			Err(_) => {
++				error!(packet.fd = handle, len_needed, "Timed out waiting for WriteFile data!");
++				if stderr_trace_enabled() {
++					eprintln!("write-file: TIMEOUT waiting for {len_needed} data bytes");
++				}
++				return fs_error();
++			}
++		}
++		stderr_trace("write-data", &data_to_write);
+ 		if let Some(wal) = opt_wal {
+ 			wal.record_oob_file_write_read(req.stream_id(), packet.file_descriptor(), len_needed)
+ 				.await;
+@@ -87,8 +139,13 @@ pub async fn handle_write_file(
+ 				Ok(SataResponse::new_force_zero_version(
+ 					pid,
+ 					request_header,
+-					// "ABUSE" result code, we actually return the amount of bytes written.
+-					SataResultCode::error(packet.block_size() * packet.block_count()),
++					// "ABUSE" result code: the number of blocks written, as Nintendo's
++					// PCFSSrvWriteFile returns it (bytes written / the request's first
++					// field, the block size on the wire, which this crate calls
++					// block_count). Returning bytes broke writes such as ACP's 0x10000 x 1
++					// copy of iconTex.tga: the console expects 1, warned "unexpected
++					// non-negative status: 65536 != 1(count)" and retried forever.
++					SataResultCode::error(if packet.block_count() == 0 { 0 } else { packet.block_size() }),
+ 				))
+ 			} else {
+ 				todo!("Implement non-FFIO support.")
+diff --git a/pkg/cat-dev/src/net/models.rs b/pkg/cat-dev/src/net/models.rs
+index 91b1141..d63666e 100644
+--- a/pkg/cat-dev/src/net/models.rs
++++ b/pkg/cat-dev/src/net/models.rs
+@@ -249,7 +249,13 @@ impl<State: Clone + Send + Sync + 'static> Request<State> {
+ 					let mut needed = to_read - buff.len();
+ 					while needed > 0 {
+ 						let read = stream.read_buf(&mut buff).await.map_err(NetworkError::IO)?;
+-						needed -= read;
++						if read == 0 {
++							return Err(NetworkError::IO(std::io::Error::from(
++								std::io::ErrorKind::UnexpectedEof,
++							))
++							.into());
++						}
++						needed = needed.saturating_sub(read);
+ 					}
+ 				}
+ 				return Ok::<Bytes, CatBridgeError>(buff.freeze());
+@@ -260,6 +266,34 @@ impl<State: Clone + Send + Sync + 'static> Request<State> {
+ 		Err(CommonNetNetworkError::StreamNoLongerProcessing.into())
+ 	}
+ 
++	/// Write raw bytes straight to the TCP stream while a request is still
++	/// being handled (before its normal response is sent).
++	///
++	/// Needed for PCFS large FFIO writes, where the server must answer the
++	/// WriteFile header with a "first response" before the console streams
++	/// the file data.
++	///
++	/// ## Errors
++	///
++	/// If the stream is no longer available, or the write fails.
++	#[cfg_attr(docsrs, doc(cfg(feature = "servers")))]
++	#[cfg(feature = "servers")]
++	pub async fn unsafe_write_bytes_to_stream(&self, data: &[u8]) -> Result<(), CatBridgeError> {
++		if let Some(strm) = self.stream_access.as_ref() {
++			let mut guard = strm.lock().await;
++			if let Some((_, stream)) = guard.as_mut() {
++				stream.writable().await.map_err(NetworkError::IO)?;
++				tokio::io::AsyncWriteExt::write_all(stream, data)
++					.await
++					.map_err(NetworkError::IO)?;
++				return Ok(());
++			}
++		}
++
++		error!("called unsafe_write_bytes_to_stream on a stream that is not processing!");
++		Err(CommonNetNetworkError::StreamNoLongerProcessing.into())
++	}
++
+ 	#[must_use]
+ 	pub const fn body(&self) -> &Bytes {
+ 		&self.body
+diff --git a/pkg/cat-dev/src/net/private.rs b/pkg/cat-dev/src/net/private.rs
+index 7cb0af9..80a4878 100644
+--- a/pkg/cat-dev/src/net/private.rs
++++ b/pkg/cat-dev/src/net/private.rs
+@@ -24,3 +24,33 @@ pub fn trace_buffer(prefix: &str, data: &[u8]) {
+ 		"{prefix}",
+ 	);
+ }
++
++/// Whether `PCFS_TRACE` is set in the environment.
++///
++/// Unlike [`trace_buffer`] this works in release builds and needs no tracing
++/// subscriber: it is what pcfsserver's `-Trace` mode uses to log raw traffic.
++pub fn stderr_trace_enabled() -> bool {
++	static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++	*ENABLED.get_or_init(|| std::env::var_os("PCFS_TRACE").is_some())
++}
++
++/// When `PCFS_TRACE` is set, print a timestamped tag, the length, and the
++/// first 96 bytes of `data` as hex to stderr.
++pub fn stderr_trace(tag: &str, data: &[u8]) {
++	if !stderr_trace_enabled() {
++		return;
++	}
++	let shown = &data[..data.len().min(96)];
++	let mut hex = String::with_capacity(shown.len() * 2);
++	for b in shown {
++		let _ = write!(&mut hex, "{b:02x}");
++	}
++	let millis = std::time::SystemTime::now()
++		.duration_since(std::time::UNIX_EPOCH)
++		.map_or(0, |d| d.as_millis() % 100_000_000);
++	eprintln!(
++		"[{millis:>8}] {tag} len={} {hex}{}",
++		data.len(),
++		if data.len() > shown.len() { "..." } else { "" },
++	);
++}
+diff --git a/pkg/cat-dev/src/net/server/tcp.rs b/pkg/cat-dev/src/net/server/tcp.rs
+index 7b00a59..8a7b757 100644
+--- a/pkg/cat-dev/src/net/server/tcp.rs
++++ b/pkg/cat-dev/src/net/server/tcp.rs
+@@ -949,6 +949,7 @@ impl<State: Clone + Send + Sync + 'static> TCPServer<State> {
+ 				res_size = tcp_stream.read_buf(&mut buff), if !read_closed => {
+ 					let size = res_size.map_err(NetworkError::IO)?;
+ 					buff.truncate(size);
++					crate::net::private::stderr_trace("tcp-read", &buff);
+ 					if buff.is_empty() {
+ 						if write_closed {
+ 							break;
+@@ -1066,6 +1067,7 @@ impl<State: Clone + Send + Sync + 'static> TCPServer<State> {
+ 							sleep(slowdown_ms).await;
+ 						}
+ 
++						crate::net::private::stderr_trace("tcp-write", &full_response);
+ 						tcp_stream.writable().await.map_err(NetworkError::IO)?;
+ 						tcp_stream
+ 							.write_all(&full_response)
+@@ -1145,6 +1147,7 @@ impl<State: Clone + Send + Sync + 'static> TCPServer<State> {
+ 			let remaining_buff = buff.split_off(end_of_packet);
+ 			let _start_of_buff = buff.split_to(start_of_packet);
+ 			let req_body = buff.freeze();
++			crate::net::private::stderr_trace("request", &req_body);
+ 			buff = remaining_buff;
+ 
+ 			let lockable_stream = Arc::new(Mutex::new(Some((Some(buff), stream))));
+@@ -1194,6 +1197,7 @@ impl<State: Clone + Send + Sync + 'static> TCPServer<State> {
+ 		}
+ 
+ 		if !buff.is_empty() {
++			crate::net::private::stderr_trace("partial-cached", &buff);
+ 			_ = nagle_cache.insert((buff, start_time));
+ 		}
+ 

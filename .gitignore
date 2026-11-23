@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# catr's own logs (audit, debug, install runs): console-specific
+catr/logs/
+
+# catr's default workspace: backups, captures and logs of one console
+/workspace/
+
+# Nintendo's files
+*.rpl
+gx2.rpl.*
+
+# Release builds are downloads, not sources
+/ReleaseBuilds/*
+!/ReleaseBuilds/.gitkeep
+
+# .NET build output, including obj\bundle\catr-bundle.zip (a Python runtime and pcfsserver.exe)
+app/bin/
+app/obj/
+app/publish/
+*.user
+.vs/
+
+# Never commit SDK tools or console images. The one pcfsserver.exe that belongs here is the sprig
+# build in pcfsserver\ (see pcfsserver\CHANGES.md).
+pcfsserver.exe
+!/pcfsserver/pcfsserver.exe
+*.wumad
+
+# Plugin build output
+plugins/*/debug/
+plugins/*/*.map
+plugins/*/*.elf
+
+# Title build output, and what the build takes or generates from the Cafe SDK
+titles/*/build/
+titles/*/master/
+titles/*/master-temp/
+titles/*/Install/
+titles/*/PCFS-MANIFEST.json
+titles/spark-cube/source/spark_cube_gsh.h

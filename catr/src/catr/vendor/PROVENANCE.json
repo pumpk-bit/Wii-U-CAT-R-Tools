@@ -1,0 +1,15 @@
+{
+  "source": "iosuhax by smealum (https://github.com/smealum/iosuhax), wupserver/wupclient.py, as carried on in stroopwafel",
+  "source_sha256": "e3ac2eac3e0db44cc5cb790008c31504499c12b20faba3e600839d59779c2ee7",
+  "vendored_sha256": "675fd2d667b4e4472867b670a031d74400b9a854e680490ac91fc8273ef6a24f",
+  "changes": [
+    "class/helpers only; no interactive globals",
+    "explicit IP and timeout",
+    "sendall and exact response reads; EOF errors",
+    "no destructor RPC",
+    "PM_Restart and dump_syslog use self",
+    "syslog address must be supplied",
+    "wupserver framing: no TCP_NODELAY, write header and payload as separate sends"
+  ],
+  "license": "iosuhax license (smealum): free to use with credit to the original creator, not for commercial purposes; sharing improvements is appreciated. Full text and credit: LICENSE-iosuhax.md."
+}

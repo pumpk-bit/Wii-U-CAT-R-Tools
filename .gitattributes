@@ -1,2 +1,13 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# cmd.exe mislabels goto targets in LF batch files
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.patch -text
+*.exe binary
+*.sh text eol=lf
+*.ipx binary
+Makefile text eol=lf
+# PROVENANCE.json has its SHA-256
+catr/src/catr/vendor/wupclient.py text eol=lf
