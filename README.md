@@ -330,6 +330,8 @@ py -3 -m unittest discover -s .\catr\tests
 AI tools helped make this project: they wrote and checked code and documentation, and helped with the
 research behind it.
 
-- **Claude** (Claude Code) by [Anthropic](https://www.anthropic.com/)
+- **[Claude](https://github.com/claude)** (Claude Code) by [Anthropic](https://www.anthropic.com/)
 - **[Codex](https://github.com/codex)** by [OpenAI](https://openai.com/)
-- **Cursor** by [Anysphere](https://cursor.com/), with **Grok** by [xAI](https://x.ai/)
+- **[Cursor](https://github.com/cursoragent)** by [Anysphere](https://cursor.com/), with **Grok** by [xAI](https://x.ai/)
+
+Everyone is listed in [CONTRIBUTORS.md](CONTRIBUTORS.md).
