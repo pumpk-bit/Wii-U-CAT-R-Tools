@@ -31,9 +31,16 @@ internal static class SerialLog
 
     private static async Task<JsonDocument> RpcAsync(Dictionary<string, object> request, CancellationToken token)
     {
-        using var endpoint = JsonDocument.Parse(await File.ReadAllTextAsync(EndpointFile, token));
-        request["token"] = endpoint.RootElement.GetProperty("token").GetString() ?? "";
-        var port = endpoint.RootElement.GetProperty("port").GetInt32();
+        int port;
+        using (var endpoint = JsonDocument.Parse(await File.ReadAllTextAsync(EndpointFile, token)))
+        {
+            var root = endpoint.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("token", out var key) || key.ValueKind != JsonValueKind.String
+                || !root.TryGetProperty("port", out var number) || !number.TryGetInt32(out port))
+                throw new IOException($"{EndpointFile} has no port and token");
+            request["token"] = key.GetString()!;
+        }
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
         using var client = new TcpClient { NoDelay = true };   // PC-local socket, not wupserver
@@ -43,10 +50,17 @@ internal static class SerialLog
         using var reader = new StreamReader(stream, Encoding.UTF8);
         var line = await reader.ReadLineAsync(timeout.Token) ?? throw new IOException("serial service closed without a reply");
         var reply = JsonDocument.Parse(line);
-        if (reply.RootElement.TryGetProperty("rpc_error", out var failure))
+        if (reply.RootElement.ValueKind != JsonValueKind.Object)
         {
             reply.Dispose();
-            throw new IOException(failure.GetString());
+            throw new IOException("serial service sent an unexpected reply");
+        }
+        if (reply.RootElement.TryGetProperty("rpc_error", out var failure))
+        {
+            // Read the message before the document is disposed.
+            var message = failure.ValueKind == JsonValueKind.String ? failure.GetString() : failure.GetRawText();
+            reply.Dispose();
+            throw new IOException($"serial service: {message}");
         }
         return reply;
     }
