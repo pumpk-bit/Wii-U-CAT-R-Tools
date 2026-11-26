@@ -158,6 +158,35 @@ class KeeperTests(unittest.TestCase):
             server.tick(self.boot_in(BOOT_TO_WAIT))
         self.assertEqual(calls, [])
 
+    def test_stale_route_server_replaced_while_console_listens(self):
+        """2026-11-26: dialed while the Ethernet link was down, so over Wi-Fi; never connected."""
+        server = self.dialing_server()
+        listening = self.boot_in(BOOT_TO_WAIT)
+        for age, expected in ((3.0, False), (3.7, True), (6.0, True), (7.0, False), (7.9, True), (9.0, False)):
+            with self.subTest(age=age):
+                self.assertEqual(server.may_replace_dialing(listening, now=100.0 + age, stale=True), expected)
+        pinged = self.boot_in(BOOT_TO_WAIT + 'PCFS: Ping complete. PCFS file system is now available.\r')
+        self.assertFalse(server.may_replace_dialing(pinged, now=104.0, stale=True))
+        for stale, replaced in ((True, True), (False, False)):
+            with self.subTest(stale=stale):
+                server, calls = self.dialing_server(), []
+                with patch.object(pcfs, 'tcp_state', lambda pid, ip: 'SYN_SENT'), \
+                     patch.object(pcfs, 'stale_route', lambda pid, ip: stale), \
+                     patch.object(pcfs.time, 'monotonic', lambda: 104.0), \
+                     patch.object(pcfs.Server, 'stop', lambda self: calls.append('stop')), \
+                     patch.object(pcfs.Server, 'start', lambda self: calls.append('start')):
+                    server.tick(listening)
+                self.assertEqual(calls, ['stop', 'start'] if replaced else [])
+
+    def test_stale_route_compares_dialing_and_current_source(self):
+        for dialing, now, stale in (('192.0.2.10', '198.51.100.1', True), ('198.51.100.1', '198.51.100.1', False),
+                                    (None, '198.51.100.1', False), ('192.0.2.10', None, False)):
+            with self.subTest(dialing=dialing, now=now), \
+                 patch.object(pcfs, 'dialing_from', lambda pid, ip: dialing), \
+                 patch.object(pcfs, 'route_source', lambda ip: now):
+                self.assertEqual(pcfs.stale_route(4321, '198.51.100.50'), stale)
+        self.assertEqual(pcfs.route_source('127.0.0.1'), '127.0.0.1')
+
     def test_keeper_stopped_and_file_removed(self):
         self.assertIsNone(pcfs.stop_keeper())
         pcfs.KEEP_FILE.write_text('{"pid": 999999999}', encoding='utf-8')

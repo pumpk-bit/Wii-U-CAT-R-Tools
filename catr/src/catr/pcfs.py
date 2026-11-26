@@ -160,7 +160,7 @@ TCP_STATES = {1: 'CLOSED', 2: 'LISTENING', 3: 'SYN_SENT', 4: 'SYN_RECEIVED', 5: 
 
 
 def tcp_connections():
-    """[(state, remote IP, remote port, PID)] of this PC's IPv4 TCP connections.
+    """[(state, remote IP, remote port, PID, local IP)] of this PC's IPv4 TCP connections.
 
     Asks Windows directly (GetExtendedTcpTable): netstat's state names are translated on a
     non-English Windows.
@@ -182,17 +182,48 @@ def tcp_connections():
         raise OSError('GetExtendedTcpTable: the table kept growing')
     count = struct.unpack_from('<I', table)[0]
     rows = (struct.unpack_from('<I4sI4sII', table, 4 + 24 * i) for i in range(count))
-    return [(TCP_STATES.get(state, str(state)), socket.inet_ntoa(remote), socket.ntohs(port & 0xFFFF), pid)
-            for state, _, _, remote, port, pid in rows]
+    return [(TCP_STATES.get(state, str(state)), socket.inet_ntoa(remote), socket.ntohs(port & 0xFFFF), pid,
+             socket.inet_ntoa(local))
+            for state, local, _, remote, port, pid in rows]
 
 
 def tcp_state(pid, ip):
     """'ESTABLISHED', 'SYN_SENT', 'CLOSE_WAIT', ... for pid's connection to ip:7500, or None."""
-    states = [state for state, remote, port, owner in tcp_connections() if (remote, port, owner) == (ip, PORT, pid)]
+    states = [state for state, remote, port, owner, _ in tcp_connections() if (remote, port, owner) == (ip, PORT, pid)]
     for wanted in ('ESTABLISHED', 'SYN_SENT', 'CLOSE_WAIT'):
         if wanted in states:
             return wanted
     return states[0] if states else None
+
+
+def dialing_from(pid, ip):
+    """The local IP of pid's SYN_SENT connection to ip:7500, or None."""
+    return next((local for state, remote, port, owner, local in tcp_connections()
+                 if (state, remote, port, owner) == ('SYN_SENT', ip, PORT, pid)), None)
+
+
+def route_source(ip):
+    """The local IP Windows would use for ip now, or None (no route). Sends nothing."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect((ip, PORT))          # UDP connect only picks a route
+            return probe.getsockname()[0]
+    except OSError:
+        return None
+
+
+def stale_route(pid, ip):
+    """True if pid is dialing ip from a local address Windows no longer uses for it.
+
+    A console on a direct cable takes the PC's Ethernet link down at every restart. While it is
+    down Windows routes the console's IP out of another adapter (2026-11-26: over Wi-Fi to the
+    router), and a server that dials then keeps that source address on every retransmit, so it
+    never connects, even after the link is back.
+    """
+    source = dialing_from(pid, ip)
+    now = route_source(ip)
+    return source is not None and now is not None and source != now
 
 
 def load_state():
@@ -446,7 +477,9 @@ class Server:
         state = tcp_state(pid, self.ip)
         if state == 'SYN_SENT':
             self.syn_since = self.syn_since or time.monotonic()
-            if not adopted and self.may_replace_dialing(boot) and tcp_state(pid, self.ip) == 'SYN_SENT':
+            stale = not adopted and boot.state == 'waiting' and stale_route(pid, self.ip)
+            if (not adopted and self.may_replace_dialing(boot, stale=stale)
+                    and tcp_state(pid, self.ip) == 'SYN_SENT'):
                 self.stop()      # checked once more just above: a connect may have completed
                 self.start()
         elif state == 'CLOSE_WAIT':
@@ -455,15 +488,18 @@ class Server:
         else:
             self.syn_since = None
 
-    def may_replace_dialing(self, boot, now=None):
+    def may_replace_dialing(self, boot, now=None, stale=False):
         """True if our SYN_SENT server can be replaced without hitting a SYN that is in flight.
 
         Only while the console is not yet listening as far as serial shows (state 'transport'):
         once it is listening or pinged, the server's next retransmit connects, and a kill could
-        land on a connection that has just mounted PCFS. The connect happened after started_at
-        and before syn_since, so the time since connect lies between those two ages.
+        land on a connection that has just mounted PCFS. The one exception is a server dialing
+        over a stale route (stale_route): its retransmits never connect, so it is replaced while
+        the console listens too, in the same gaps between SYNs. The connect happened after
+        started_at and before syn_since, so the time since connect lies between those two ages.
         """
-        if boot.state != 'transport' or self.syn_since is None or self.started_at is None:
+        allowed = ('transport', 'waiting') if stale else ('transport',)
+        if boot.state not in allowed or self.syn_since is None or self.started_at is None:
             return False
         now = time.monotonic() if now is None else now
         at_least, at_most = now - self.syn_since, now - self.started_at
