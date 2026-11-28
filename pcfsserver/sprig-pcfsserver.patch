@@ -70,7 +70,7 @@ index e2860b0..e680f8a 100644
 +	}
  }
 diff --git a/pkg/cat-dev/src/fsemul/pcfs/sata/server/write_file.rs b/pkg/cat-dev/src/fsemul/pcfs/sata/server/write_file.rs
-index 8a8871d..0f67cb3 100644
+index 0e74259..8e22315 100644
 --- a/pkg/cat-dev/src/fsemul/pcfs/sata/server/write_file.rs
 +++ b/pkg/cat-dev/src/fsemul/pcfs/sata/server/write_file.rs
 @@ -10,14 +10,23 @@ use crate::{
@@ -176,22 +176,66 @@ index 8a8871d..0f67cb3 100644
  		if let Some(wal) = opt_wal {
  			wal.record_oob_file_write_read(req.stream_id(), packet.file_descriptor(), len_needed)
  				.await;
-@@ -87,8 +139,13 @@ pub async fn handle_write_file(
+@@ -87,8 +139,12 @@ pub async fn handle_write_file(
  				Ok(SataResponse::new_force_zero_version(
  					pid,
  					request_header,
 -					// "ABUSE" result code, we actually return the amount of bytes written.
 -					SataResultCode::error(packet.block_size() * packet.block_count()),
-+					// "ABUSE" result code: the number of blocks written, as Nintendo's
-+					// PCFSSrvWriteFile returns it (bytes written / the request's first
-+					// field, the block size on the wire, which this crate calls
-+					// block_count). Returning bytes broke writes such as ACP's 0x10000 x 1
-+					// copy of iconTex.tga: the console expects 1, warned "unexpected
-+					// non-negative status: 65536 != 1(count)" and retried forever.
-+					SataResultCode::error(if packet.block_count() == 0 { 0 } else { packet.block_size() }),
++					// "ABUSE" result code: bytes or blocks written, see ffio_write_result.
++					SataResultCode::error(ffio_write_result(
++						packet.block_count(),
++						packet.block_size(),
++						flags.first_write_size(),
++					)),
  				))
  			} else {
  				todo!("Implement non-FFIO support.")
+@@ -111,3 +167,44 @@ pub async fn handle_write_file(
+ 	}
+ }
+ 
++/// The final FFIO WriteFile result, as Nintendo's `PCFSSrvWriteFile` computes it.
++///
++/// `first_field` is the request's first field (the block size on the wire, which this
++/// crate calls `block_count`) and `second_field` the number of blocks.
++///
++/// - A write that fits in the console's first write size takes the inline path: the
++///   result is the number of bytes written, and the console divides it by the block
++///   size itself. ACP's 0x2866 x 1 copy of the save's `meta/meta.xml` got 1 back, the
++///   console made that 1 / 0x2866 = 0, warned "unexpected non-negative status:
++///   0 != 1(count)" and copied the file again forever.
++/// - A larger write (first response, then streamed data) returns the number of blocks:
++///   bytes written / the first field (`div` at 0x1001ba8b in PCFSServerDLL.dll). ACP's
++///   0x10000 x 1 copy of `meta/iconTex.tga` wants 1 there; bytes gave "65536 !=
++///   1(count)".
++fn ffio_write_result(first_field: u32, second_field: u32, first_write_size: u32) -> u32 {
++	let bytes = u64::from(first_field) * u64::from(second_field);
++	if bytes <= u64::from(first_write_size) {
++		u32::try_from(bytes).unwrap_or(u32::MAX)
++	} else if first_field == 0 {
++		0
++	} else {
++		second_field
++	}
++}
++
++#[cfg(test)]
++mod ffio_write_result_tests {
++	use super::ffio_write_result;
++
++	#[test]
++	pub fn small_write_returns_bytes() {
++		assert_eq!(ffio_write_result(0x2866, 1, 65184), 0x2866);
++		assert_eq!(ffio_write_result(1, 0x2866, 65184), 0x2866);
++	}
++
++	#[test]
++	pub fn large_write_returns_blocks() {
++		assert_eq!(ffio_write_result(0x10000, 1, 65184), 1);
++		assert_eq!(ffio_write_result(1, 0x40000, 65184), 0x40000);
++	}
++}
 diff --git a/pkg/cat-dev/src/net/models.rs b/pkg/cat-dev/src/net/models.rs
 index 91b1141..d63666e 100644
 --- a/pkg/cat-dev/src/net/models.rs

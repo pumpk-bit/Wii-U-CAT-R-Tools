@@ -44,12 +44,21 @@ Cafe SDK's own PCFS server does (`PCFSSrvWriteFile` in SDK 2.12.13's `PCFSServer
 analysing that DLL. None of Nintendo's code is included. If the data never arrives, the server gives up after **120 seconds** and returns an error to the console instead of
 hanging.
 
-### WriteFile result is a block count (`write_file.rs`)
+### WriteFile result (`write_file.rs`)
 
-The final WriteFile result is now the number of **blocks** written (bytes divided by the request's
-block size), as the console expects and as `PCFSSrvWriteFile` computes it. Upstream returned bytes, which only matches for 1-byte blocks.
-For example, a title saving its `meta/iconTex.tga` as one 0x10000-byte block got 65536 back instead of
-1, logged `FSA: Warning: unexpected non-negative status: 65536 != 1(count)` and retried forever.
+The final WriteFile result depends on the size of the write, as in `PCFSSrvWriteFile`:
+
+- A write that fits in the first write size returns the number of **bytes** written, as upstream did.
+  The console divides it by the block size itself.
+- A larger write returns the number of **blocks** written (bytes divided by the request's block size).
+  Upstream returned bytes here too. A title saving its `meta/iconTex.tga` as one 0x10000-byte block got
+  65536 back instead of 1, logged `FSA: Warning: unexpected non-negative status: 65536 != 1(count)`
+  and retried forever.
+
+Returning blocks for small writes as well broke them the other way: a title saving its 10342-byte
+`meta/meta.xml` as one block got 1, which the console turned into 0, so it logged `0 != 1(count)` and
+copied the file again forever.
+
 ReadFile still returns bytes, as the console expects there.
 
 ### Stream helpers (`pkg/cat-dev/src/net/models.rs`)
