@@ -7,7 +7,7 @@ The PC side is [`pcfsserver`](../../pcfsserver/CHANGES.md), which catr and CatR-
 
 | File | What it is |
 |---|---|
-| `5pcfstcp.ipx` | The build to put on the SD card (version V11). SHA-256 `1e1d04d0e983c4d016df195222ce982d53f7e8994e2999965f0fd8f9f8c21034` |
+| `5pcfstcp.ipx` | The build to put on the SD card (version V12). SHA-256 `6fd7e719842e78354b4adf271eccb9af9ed5fbbaed01165255a0f50b24fb726c` |
 | `source/main.c` | Its source |
 | `Makefile`, `build.sh` | The build. The rules, linker script and `crt0.S` come from stroopwafel's example plugin (see Building). |
 
@@ -29,6 +29,7 @@ The PC side is [`pcfsserver`](../../pcfsserver/CHANGES.md), which catr and CatR-
 | `5isfshax.ipx`, `5payldr.ipx` | [wafel_isfshax_patch](https://github.com/jan-hofmeier/wafel_isfshax_patch) and [wafel_payloader](https://github.com/StroopwafelCFW/wafel_payloader), not included here | The usual ISFShax and Tiramisu boot; PCFS itself doesn't use them |
 | `5dktcp.ipx` | [`../dk-tcp`](../dk-tcp/README.md) | Debugging with GDB or MULTI; PCFS doesn't use it |
 | `5pcfstcp.ipx` | **this folder** | PCFS |
+| `5usbe72e.ipx` | [`../ax88772e`](../ax88772e/README.md) | PCFS over a USB Ethernet adapter (AX88772A/B/C/E); not needed over Wi-Fi |
 | `6wupserver.ipx` | [`../wupserver`](../wupserver/README.md), a build of stroopwafel's `wafel_plugin_wupserver` | wupserver on port 1337, which every catr command uses |
 
 - The **CAT Recovery Menu** as the console's default title (see Known problems).
@@ -43,10 +44,11 @@ The PC side is [`pcfsserver`](../../pcfsserver/CHANGES.md), which catr and CatR-
 The USB serial log shows it working:
 
 ```text
-PCFSTCP[V11]: config enable overridden to 1 in RAM
-PCFSTCP[V11]: selected native TCP transport=3 port=7500
-PCFSTCP[V11]: TCP_SM_Init result=0 attempts=1 retries=0 ncl_fd=...
+PCFSTCP[V12]: config enable overridden to 1 in RAM
+PCFSTCP[V12]: selected native TCP transport=3 port=7500
+PCFSTCP[V12]: TCP_SM_Init result=0 attempts=1 retries=0 ncl_fd=...
 PCFS: Waiting for PC connection on port 7500...
+PCFSTCP[V12]: socket 0 winscale=0 rcvbuf=131072 sndbuf=131072
 PCFS: Ping complete. PCFS file system is now available.
 FSA: Attached volume to hfio01 (pcfs)
 ```
@@ -56,7 +58,7 @@ console is changed for good.
 
 ## What it does
 
-All three changes are made in RAM, in IOSU's FS module:
+All four changes are made in RAM, in IOSU's FS module:
 
 1. **Config gate.** The FS module reads "PCFS enabled" from its config and finds 0. The plugin sets it
    to 1.
@@ -65,6 +67,11 @@ All three changes are made in RAM, in IOSU's FS module:
 3. **Start-up retry (V11).** Early in boot, the network driver isn't always registered yet when PCFS
    starts its TCP transport, and the start fails within milliseconds. The plugin retries the start
    every 250 ms, up to 25 times, but only for that failure. Other failures pass through unchanged.
+4. **Socket buffers (V12).** Nintendo's code opens the PCFS socket with the default buffers. Before the
+   console starts listening, the plugin turns on TCP window scaling and asks for 128 KB receive and send
+   buffers, trying 64, 32 and 16 KB if the network stack refuses. The `socket` log line shows what was
+   accepted (a negative number is a refusal). The console still advertises an 8 KB window, so this
+   has not made PCFS faster by itself; it is there for when that limit is found.
 
 Its log lines go through the FS module's own logger, so they appear in the CAT-R's **USB serial log**.
 
