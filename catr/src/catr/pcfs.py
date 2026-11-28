@@ -446,6 +446,7 @@ class Server:
         self.syn_since, self.starts, self.started_at = None, self.starts + 1, time.monotonic()
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STATE_FILE.write_text(json.dumps({'pid': self.process.pid, 'ip': self.ip, 'root': self.root, 'log': str(log),
+                                          'trace': bool(self.trace),
                                           'started': datetime.now().isoformat(timespec='seconds')}), encoding='utf-8')
 
     def stop(self):

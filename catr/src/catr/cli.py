@@ -799,6 +799,11 @@ def describe(state):
     return state.get('state', 'unknown')
 
 
+# A restart into another title (slowlaunch, killrestart). Up to 90 s was usual; one took
+# about 105 s on 2026-11-28 with the USB Ethernet adapter, so 90 s gave up on a live console.
+RESTART_WAIT = 150
+
+
 def follow(sent, watch, timeout, keeper=None):
     """Feed serial output from the send onward until the watch decides, or time runs out.
 
@@ -902,7 +907,7 @@ def launch(args):
     if not sent['proof']:
         print('  no echo seen for the command; watching anyway, not resending', file=sys.stderr)
     watch = Watch('launch', tid)
-    outcome = follow(sent, watch, 90 if method == 'slowlaunch' else 60, keeper)
+    outcome = follow(sent, watch, RESTART_WAIT if method == 'slowlaunch' else 60, keeper)
     report = {'outcome': outcome, 'title': tid, 'location': record['device'] if record else 'unchecked',
               'method': method, 'sent': sent['wire'],
               'proof': sent['proof'], 'before': describe(sent['before']),
@@ -949,7 +954,7 @@ def restart(args):
     confirm(f'kill and restart {describe(state)} (cos killrestart)', args.yes)
     sent = serial.rpc({'op': 'act', 'action': 'killrestart'}, timeout=20)
     watch = Watch('launch', tid)
-    outcome = follow(sent, watch, 90)
+    outcome = follow(sent, watch, RESTART_WAIT)
     report = {'outcome': 'restarted' if outcome == 'launched' else outcome, 'title': tid, 'sent': sent['wire'],
               'proof': sent['proof'], 'now': describe(watch.title.value), 'cafe_restarted': watch.restarted}
     if outcome.startswith('uncertain'):
@@ -1121,8 +1126,15 @@ def ensure_pcfs(ip, root=None, trace=False, tries=3, yes=False, force=False, nee
         registered, title = ready
         if root and Path(root).resolve() != Path(registered['root']).resolve():
             raise ValueError(f"PCFS is up on another root ({registered['root']}); catr pcfs down first")
-        return True, {'outcome': 'already-up', 'server_pid': registered['pid'], 'root': registered['root'],
-                      'console': describe(title)}
+        if trace and not registered.get('trace'):
+            # PCFS_TRACE is read when the server starts, and a new server only connects in a
+            # boot's window, so tracing needs a restart into the Recovery Menu.
+            print(f"  [pcfs] the running server (PID {registered['pid']}) is not tracing; "
+                  'restarting into the Recovery Menu for a traced one', file=sys.stderr)
+            ready = None
+        else:
+            return True, {'outcome': 'already-up', 'server_pid': registered['pid'], 'root': registered['root'],
+                          'console': describe(title)}
     ensure_service()
     refused = front_guard()
     if refused:
@@ -1144,7 +1156,7 @@ def ensure_pcfs(ip, root=None, trace=False, tries=3, yes=False, force=False, nee
         keeper = pcfs.Keeper(server)
         sent = serial.rpc({'op': 'act', 'action': method, 'tid': RECOVERY}, timeout=20)
         watch = Watch('launch', RECOVERY)
-        outcome = follow(sent, watch, 90, keeper)
+        outcome = follow(sent, watch, RESTART_WAIT, keeper)
         attempts.append({'attempt': attempt, 'sent': sent['wire'], 'proof': sent['proof'],
                          'title': outcome, 'pcfs': pcfs_report(keeper)})
         if outcome != 'launched':
@@ -1314,7 +1326,7 @@ def stop(args):
         keeper = pcfs_keeper() if args.keep_pcfs else None
         sent = serial.rpc({'op': 'act', 'action': method, 'tid': RECOVERY}, timeout=20)
         watch = Watch('launch', RECOVERY)
-        outcome = follow(sent, watch, 90, keeper)
+        outcome = follow(sent, watch, RESTART_WAIT, keeper)
         report.update(outcome=outcome, sent=sent['wire'], proof=sent['proof'], cafe_restarted=watch.restarted)
         if keeper:
             report['pcfs'] = pcfs_report(keeper)
@@ -1800,7 +1812,7 @@ def repair_recovery_menu(args):
     # 3. start it and wait for its own line
     sent = serial.rpc({'op': 'act', 'action': 'slowlaunch', 'tid': RECOVERY}, timeout=20)
     watch = Watch('launch', RECOVERY)
-    report['launch'] = follow(sent, watch, 90)
+    report['launch'] = follow(sent, watch, RESTART_WAIT)
     seen = None
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline and not seen:
