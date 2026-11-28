@@ -25,13 +25,13 @@ and uploads it again.
 First without changing anything on the console:
 
 ```powershell
-py -3 -I .\tools\gx2-patch\patch_gx2_spark_gate.py 192.168.1.50 --dry-run
+py -3 -I .\tools\gx2-patch\patch_gx2_spark_gate.py 192.0.2.50 --dry-run
 ```
 
 Then for real. It asks before it uploads:
 
 ```powershell
-py -3 -I .\tools\gx2-patch\patch_gx2_spark_gate.py 192.168.1.50
+py -3 -I .\tools\gx2-patch\patch_gx2_spark_gate.py 192.0.2.50
 ```
 
 When it says `readback matches`, restart the console. The old `gx2.rpl` stays in use until then.

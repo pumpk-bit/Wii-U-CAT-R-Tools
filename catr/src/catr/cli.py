@@ -2019,7 +2019,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     sub = commands.add_parser('find', help='discover and verify wupserver; save selected endpoint')
     sub.add_argument('--ip', help="the console's IP address; without it, catr searches this PC's own networks")
-    sub.add_argument('--network', help='search this network instead, e.g. 192.168.1.0/24')
+    sub.add_argument('--network', help='search this network instead, e.g. 192.0.2.0/24')
     sub.add_argument('--port', help='USB serial port to save, e.g. COM3 (default: the saved one, else the only one found)')
     sub = commands.add_parser('info', help='read console identity, title metadata and local artifact hashes')
     sub.add_argument('--ip')

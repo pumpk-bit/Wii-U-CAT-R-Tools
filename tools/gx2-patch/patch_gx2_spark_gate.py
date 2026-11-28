@@ -18,9 +18,9 @@ If a title fails to start afterwards, upload the saved backup with the same
 STOR (this FTP server rejects renames).
 
 Usage:
-  py -3 -I patch_gx2_spark_gate.py 192.168.1.50 --dry-run
-  py -3 -I patch_gx2_spark_gate.py 192.168.1.50
-  py -3 -I patch_gx2_spark_gate.py 192.168.1.50 --path /storage_slc/sys/title/00050010/1000400a/code/gx2.rpl
+  py -3 -I patch_gx2_spark_gate.py 192.0.2.50 --dry-run
+  py -3 -I patch_gx2_spark_gate.py 192.0.2.50
+  py -3 -I patch_gx2_spark_gate.py 192.0.2.50 --path /storage_slc/sys/title/00050010/1000400a/code/gx2.rpl
 """
 
 import argparse

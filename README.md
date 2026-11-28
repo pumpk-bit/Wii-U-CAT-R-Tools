@@ -73,7 +73,7 @@ your own builds straight from the PC, read the console's logs, and back up its s
 
 Run the commands in **PowerShell, in this repository's folder**. The scripts are started through
 `powershell -ExecutionPolicy Bypass -File`, because Windows does not run downloaded scripts by default.
-`192.168.1.50` and `COM3` are examples: use your console's.
+`192.0.2.50` and `COM3` are examples: use your console's.
 
 ### 1. Get the files
 
@@ -128,7 +128,7 @@ itself.
 **With catr:**
 
 ```powershell
-.\catr\catr.cmd find --ip 192.168.1.50 --port COM3
+.\catr\catr.cmd find --ip 192.0.2.50 --port COM3
 ```
 
 ```powershell

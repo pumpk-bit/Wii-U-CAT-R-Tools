@@ -23,7 +23,7 @@ The examples use `.\catr\catr.cmd`; with CatR-Tools.exe, write `CatR-Tools` inst
 
 ```powershell
 .\catr\catr.cmd find                       # look for the console on this PC's network
-.\catr\catr.cmd find --ip 192.168.1.50 --port COM3   # check that wupserver answers, save the IP and COM port
+.\catr\catr.cmd find --ip 192.0.2.50 --port COM3   # check that wupserver answers, save the IP and COM port
 .\catr\catr.cmd info                       # default title, versions, free space
 .\catr\catr.cmd info --iosu                # also check the IOSU files (takes about 80 s)
 .\catr\catr.cmd serial --status            # the serial service that shares the COM port

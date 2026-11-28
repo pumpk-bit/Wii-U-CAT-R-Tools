@@ -35,7 +35,7 @@ Install: copy `5dktcp.ipx` to `wiiu/ios_plugins/` on the SD card and restart. Th
 Start the bridge and leave it running:
 
 ```powershell
-py -3 .\plugins\dk-tcp\dk_gdb.py 192.168.1.50
+py -3 .\plugins\dk-tcp\dk_gdb.py 192.0.2.50
 ```
 
 Start the title from the CAT Recovery Menu or with no title running:

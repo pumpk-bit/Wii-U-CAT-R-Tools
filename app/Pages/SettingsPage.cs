@@ -4,7 +4,7 @@ namespace CatRTools;
 
 internal sealed class SettingsPage : Page
 {
-    private readonly TextBox ip = Ui.TextBox(placeholder: "e.g. 192.168.1.50; empty searches this PC's network");
+    private readonly TextBox ip = Ui.TextBox(placeholder: "e.g. 192.0.2.50; empty searches this PC's network");
     private readonly TextBox port = Ui.TextBox(placeholder: "e.g. COM3 (Device Manager > Ports)");
     private readonly Label consoleNote = Ui.Note("");
     private readonly OutputPanel output = new();

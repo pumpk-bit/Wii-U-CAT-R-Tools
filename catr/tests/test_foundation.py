@@ -277,7 +277,7 @@ class FoundationTests(unittest.TestCase):
     def test_action_echo_proof(self):
         from catr.transport.serial import echo_proof
         # Raw bytes from the 2026-11-14 live test: no '#' prompt follows a launch.
-        self.assertTrue(echo_proof('ay    : 192.168.1.1\rcos launch 0x00050000 0x1F6FF000\r00:00:12:632: MCP: PID 14',
+        self.assertTrue(echo_proof('ay    : 192.0.2.1\rcos launch 0x00050000 0x1F6FF000\r00:00:12:632: MCP: PID 14',
                                    'cos launch 0x00050000 0x1F6FF000'))
         self.assertTrue(echo_proof(' 1 done (5322 ms)\r# cos slowlaunch 0x000500101F700700\r00:00:23:998: MCP',
                                    'cos slowlaunch 0x000500101F700700'))

@@ -72,5 +72,18 @@ Copy-Item (Join-Path $licenses '*') (Join-Path $Output 'licenses') -Force
 # The plugins for the console's SD card, next to the exe, and the debugger plugin's PC side.
 Copy-Item (Join-Path $PSScriptRoot '..\plugins\*\*.ipx') $Output -Force
 Copy-Item (Join-Path $PSScriptRoot '..\plugins\dk-tcp\dk_gdb.py') $Output -Force
+# The CAT Recovery Menu's install folder, for System Config Tool on the SD card, when it has been built
+# (titles\recovery-menu\scripts\Build-Install.ps1 needs the Cafe SDK and GHS, so this build doesn't run it).
+$menuInstall = Join-Path $PSScriptRoot '..\titles\recovery-menu\Install'
+$menus = @(Get-ChildItem -LiteralPath $menuInstall -Directory -Filter 'CAT-Recovery-Menu-*' -ErrorAction SilentlyContinue)
+if ($menus) {
+    foreach ($menu in $menus) {
+        $target = Join-Path $Output $menu.Name
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+        Copy-Item -LiteralPath $menu.FullName -Destination $target -Recurse
+    }
+} else {
+    Write-Warning 'No CAT Recovery Menu in the release: build it first with titles\recovery-menu\scripts\Build-Install.ps1.'
+}
 $where = if ($Workspace) { "workspace $Workspace" } else { 'no workspace built in' }
 Write-Host "Built: $(Join-Path $Output 'CatR-Tools.exe') ($where)"

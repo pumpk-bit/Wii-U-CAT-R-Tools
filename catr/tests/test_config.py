@@ -31,12 +31,12 @@ class ConfigFileTests(unittest.TestCase):
 
     def test_pointer_to_the_exes_file_is_followed(self):
         exe = Path(self.temp.name) / 'config.json'
-        self.write(exe, {'ip': '192.168.1.50'})
+        self.write(exe, {'ip': '192.0.2.50'})
         self.write(self.home / 'config.json', {'config_file': str(exe), 'ip': 'stale'})
         self.assertEqual(config.config_file(), exe)
-        self.assertEqual(config.load()['ip'], '192.168.1.50')
-        config.save({'ip': '192.168.1.51'})
-        self.assertEqual(json.loads(exe.read_text('utf-8'))['ip'], '192.168.1.51')
+        self.assertEqual(config.load()['ip'], '192.0.2.50')
+        config.save({'ip': '192.0.2.51'})
+        self.assertEqual(json.loads(exe.read_text('utf-8'))['ip'], '192.0.2.51')
         self.assertEqual(json.loads((self.home / 'config.json').read_text('utf-8'))['ip'], 'stale')
 
     def test_missing_pointer_target_falls_back(self):
@@ -51,11 +51,11 @@ class ConfigFileTests(unittest.TestCase):
         self.assertEqual(config.config_file(), Path(self.temp.name) / 'mine.json')
 
     def test_a_file_with_a_bom_is_read(self):
-        (self.home / 'config.json').write_text(json.dumps({'ip': '192.168.1.50'}), 'utf-8-sig')
-        self.assertEqual(config.load(), {'ip': '192.168.1.50'})
+        (self.home / 'config.json').write_text(json.dumps({'ip': '192.0.2.50'}), 'utf-8-sig')
+        self.assertEqual(config.load(), {'ip': '192.0.2.50'})
 
     def test_save_leaves_no_temporary_file(self):
-        config.save({'ip': '192.168.1.50'})
+        config.save({'ip': '192.0.2.50'})
         self.assertEqual(sorted(path.name for path in self.home.iterdir()), ['config.json'])
 
 
