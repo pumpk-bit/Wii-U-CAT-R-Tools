@@ -39,6 +39,7 @@ your own builds straight from the PC, read the console's logs, and back up its s
 | [`titles/recovery-menu/`](titles/recovery-menu/README.md) | **CAT Recovery Menu**, the title the console boots into. Not a real recovery menu: a safe place to return to, where the tools keep working. | For PCFS, `stop` and `maintenance` |
 | [`plugins/pcfs-tcp/`](plugins/pcfs-tcp/README.md) | **5pcfstcp.ipx**, the console side of PCFS. | For PCFS |
 | [`pcfsserver/`](pcfsserver/CHANGES.md) | **pcfsserver.exe**, the PC side of PCFS: sprig's server with fixes for the CAT-R. | For PCFS; catr starts it |
+| [`plugins/ax88772e/`](plugins/ax88772e/README.md) | **5usbe72e.ipx**, support for USB Ethernet adapters with an AX88772A/B/C/E chip. | For PCFS over a cable |
 | [`titles/spark-cube/`](titles/spark-cube/README.md) | **SparkCube**, a demo title that shows SPARK captures. | Optional |
 | [`tools/gx2-patch/`](tools/gx2-patch/README.md) | A script that patches your console's own `gx2.rpl`, so SPARK can capture. | Optional, for SPARK |
 | [`plugins/dk-tcp/`](plugins/dk-tcp/README.md) | **5dktcp.ipx** and `dk_gdb.py`: debug a title with GDB or MULTI over the network. | Optional |
@@ -96,6 +97,7 @@ Copy these to the folder `wiiu/ios_plugins/` on the SD card:
 | `00core.ipx` | [stroopwafel](https://github.com/StroopwafelCFW/stroopwafel) | All the plugins |
 | `6wupserver.ipx` | [`plugins/wupserver/6wupserver.ipx`](plugins/wupserver/6wupserver.ipx) in this repository (a build of stroopwafel's `wafel_plugin_wupserver`) | Everything here |
 | `5pcfstcp.ipx` | [`plugins/pcfs-tcp/5pcfstcp.ipx`](plugins/pcfs-tcp/5pcfstcp.ipx) in this repository | PCFS |
+| `5usbe72e.ipx` | [`plugins/ax88772e/5usbe72e.ipx`](plugins/ax88772e/5usbe72e.ipx) in this repository | A USB Ethernet adapter (AX88772A/B/C/E); not needed over Wi-Fi |
 
 Put the card back, start the console, and boot with one of minute's **Patch (sd)** options.
 [More about the plugins](plugins/pcfs-tcp/README.md#what-you-need-on-the-console).
@@ -245,7 +247,7 @@ The environment variables that override these are in [catr/README.md](catr/READM
 |---|---|---|
 | CatR-Tools.exe | `powershell -ExecutionPolicy Bypass -File .\app\build.ps1` | `ReleaseBuilds\CatR-Tools.exe` |
 | catr | Nothing to build | |
-| A plugin | In devkitPro's MSYS2 shell: `STROOPWAFEL_ROOT=/c/path/to/stroopwafel plugins/pcfs-tcp/build.sh` (or `wupserver`, `dk-tcp`) | `5pcfstcp.ipx` (or the other plugin) in its folder |
+| A plugin | In devkitPro's MSYS2 shell: `STROOPWAFEL_ROOT=/c/path/to/stroopwafel plugins/pcfs-tcp/build.sh` (or `wupserver`, `dk-tcp`, `ax88772e`) | `5pcfstcp.ipx` (or the other plugin) in its folder |
 | CAT Recovery Menu | `powershell -ExecutionPolicy Bypass -File .\titles\recovery-menu\scripts\Build-Install.ps1` | A `.wumad` and the `Install` folder |
 | SparkCube | `powershell -ExecutionPolicy Bypass -File .\titles\spark-cube\scripts\Build.ps1` | A `.wumad` and the `Install` folder |
 | pcfsserver.exe | With Rust, from sprig's source: see [CHANGES.md](pcfsserver/CHANGES.md#building-it-yourself) | `target\release\pcfsserver.exe` |
@@ -320,6 +322,10 @@ py -3 -m unittest discover -s .\catr\tests
 - **5pcfstcp.ipx** is written against [stroopwafel](https://github.com/StroopwafelCFW/stroopwafel)'s
   plugin API and builds with stroopwafel's example plugin template; see
   [its README](plugins/pcfs-tcp/README.md#credits).
+- **5usbe72e.ipx** builds on [wafel_ax88772b](https://github.com/StroopwafelCFW/wafel_ax88772b)
+  (StroopwafelCFW) for the AX88772A/B/C support and its USB host structures, and follows ASIX's own
+  drivers for the AX88772E start-up sequence; see [its README](plugins/ax88772e/README.md#credits).
+  wafel_ax88772b states no license.
 - **5dktcp.ipx** is written against stroopwafel's plugin API too, and its socket code follows wupserver's
   (smealum's iosuhax and stroopwafel's authors); see [its README](plugins/dk-tcp/README.md#credits).
 - **CAT Recovery Menu** follows the MCP and FSA structure layouts in
